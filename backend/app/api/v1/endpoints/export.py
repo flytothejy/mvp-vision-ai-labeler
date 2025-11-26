@@ -502,12 +502,14 @@ async def list_versions(
     _permission = Depends(require_project_permission("viewer")),
 ):
     """
-    Get list of published versions for a project.
+    Get list of versions for a project (published + working).
 
     Requires: viewer role or higher
 
-    Returns all published versions, ordered by creation date (newest first).
+    Returns all published and working versions, ordered by creation date (newest first).
     Automatically regenerates expired presigned URLs.
+
+    Phase 11: Includes working versions for diff comparison.
     """
     # Verify project exists
     project = labeler_db.query(AnnotationProject).filter(
@@ -520,10 +522,10 @@ async def list_versions(
             detail=f"Project {project_id} not found",
         )
 
-    # Get all versions
+    # Phase 11: Get all versions (published + working)
     versions = labeler_db.query(AnnotationVersion).filter(
         AnnotationVersion.project_id == project_id,
-        AnnotationVersion.version_type == "published"
+        AnnotationVersion.version_type.in_(["published", "working"])
     ).order_by(AnnotationVersion.created_at.desc()).all()
 
     # Check and regenerate expired URLs

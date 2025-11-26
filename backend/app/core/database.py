@@ -7,6 +7,7 @@ Manages connections to:
 - Labeler DB (read-write, PostgreSQL)
 """
 
+import logging
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -19,9 +20,11 @@ from app.core.config import settings
 # Platform Database (Read-Only)
 # =============================================================================
 
+# Phase 11: Disable SQL echo to reduce verbosity
+# Keep application DEBUG mode but disable SQL query logging
 platform_engine = create_engine(
     settings.PLATFORM_DB_URL,
-    echo=settings.DEBUG,
+    echo=False,  # Disabled for cleaner logs
     pool_pre_ping=True,
     poolclass=NullPool if settings.ENVIRONMENT == "test" else None,
 )
@@ -46,7 +49,7 @@ PlatformBase = declarative_base()
 
 user_engine = create_engine(
     settings.USER_DB_URL,
-    echo=settings.DEBUG,
+    echo=False,  # Disabled for cleaner logs
     pool_pre_ping=True,
     poolclass=NullPool if settings.ENVIRONMENT == "test" else None,
 )
@@ -66,7 +69,7 @@ UserBase = declarative_base()
 
 labeler_engine = create_engine(
     settings.LABELER_DB_URL,
-    echo=settings.DEBUG,
+    echo=False,  # Disabled for cleaner logs
     pool_pre_ping=True,
     poolclass=NullPool if settings.ENVIRONMENT == "test" else None,
 )

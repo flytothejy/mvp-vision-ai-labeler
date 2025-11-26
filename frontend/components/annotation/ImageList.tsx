@@ -37,6 +37,8 @@ export default function ImageList() {
     selectImageRange,
     clearImageSelection,
     isImageSelected,
+    // Phase 11: Diff mode
+    diffMode,
   } = useAnnotationStore();
 
   const [filter, setFilter] = useState<FilterType>('all');
@@ -107,6 +109,36 @@ export default function ImageList() {
     }
   };
 
+  // Phase 11: Check if image has changes in diff mode
+  const getImageDiffInfo = (imageId: string) => {
+    if (!diffMode.enabled || !diffMode.diffData) {
+      return null;
+    }
+
+    const imageDiff = diffMode.diffData.image_diffs?.[imageId];
+    if (!imageDiff) {
+      return null;
+    }
+
+    const added = imageDiff.added?.length || 0;
+    const removed = imageDiff.removed?.length || 0;
+    const modified = imageDiff.modified?.length || 0;
+    const changeCount = added + removed + modified;
+
+    // Debug: Log first few images to understand the data
+    if (Math.random() < 0.1) { // Log ~10% of images to avoid spam
+      console.log('[ImageList] Diff info for', imageId, ':', { added, removed, modified, changeCount });
+    }
+
+    return {
+      hasChanges: changeCount > 0,
+      changeCount,
+      added,
+      removed,
+      modified,
+    };
+  };
+
   // Phase 2.7: Enhanced Status Badge Component
   const StatusBadge = ({ status }: { status: 'not-started' | 'in-progress' | 'completed' }) => {
     if (status === 'completed') {
@@ -131,6 +163,20 @@ export default function ImageList() {
       <div className="bg-gray-400 dark:bg-gray-600 rounded-full w-5 h-5 flex items-center justify-center shadow-sm" title="Not Started">
         <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="3" />
+        </svg>
+      </div>
+    );
+  };
+
+  // Phase 11: Diff Badge Component
+  const DiffBadge = ({ diffInfo }: { diffInfo: { added: number; removed: number; modified: number; changeCount: number } }) => {
+    return (
+      <div
+        className="bg-violet-600 rounded-full w-5 h-5 flex items-center justify-center shadow-sm ring-2 ring-violet-400 ring-opacity-50"
+        title={`${diffInfo.changeCount} changes: +${diffInfo.added} -${diffInfo.removed} ~${diffInfo.modified}`}
+      >
+        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
         </svg>
       </div>
     );
@@ -326,6 +372,9 @@ export default function ImageList() {
               const isLocked = !!lock;
               const isMyLock = lock?.user_id === user?.id;
 
+              // Phase 11: Get diff info for this image
+              const diffInfo = getImageDiffInfo(img.id);
+
               return (
                 <div
                   key={img.id}
@@ -396,7 +445,15 @@ export default function ImageList() {
                         </svg>
                       </div>
                     )}
-                    <StatusBadge status={status} />
+
+                    {/* Phase 11: Diff badge - show only in diff mode */}
+                    {diffMode.enabled ? (
+                      diffInfo && diffInfo.hasChanges ? (
+                        <DiffBadge diffInfo={diffInfo} />
+                      ) : null
+                    ) : (
+                      <StatusBadge status={status} />
+                    )}
                   </div>
 
                   {/* Current image indicator */}
@@ -431,6 +488,9 @@ export default function ImageList() {
                   const lock = projectLocks[img.id];
                   const isLocked = !!lock;
                   const isMyLock = lock?.user_id === user?.id;
+
+                  // Phase 11: Get diff info for this image
+                  const diffInfo = getImageDiffInfo(img.id);
 
                   return (
                     <tr
@@ -481,7 +541,15 @@ export default function ImageList() {
                               </svg>
                             </div>
                           )}
-                          <StatusBadge status={status} />
+
+                          {/* Phase 11: Diff badge - show only in diff mode */}
+                          {diffMode.enabled ? (
+                            diffInfo && diffInfo.hasChanges ? (
+                              <DiffBadge diffInfo={diffInfo} />
+                            ) : null
+                          ) : (
+                            <StatusBadge status={status} />
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { listVersions, downloadExport, type Version } from '@/lib/api/export';
+import { useAnnotationStore } from '@/lib/stores/annotationStore';
 
 interface VersionHistoryModalProps {
   isOpen: boolean;
@@ -19,6 +20,9 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
   const [versions, setVersions] = useState<Version[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState<Set<number>>(new Set());
+  const { enterDiffMode } = useAnnotationStore();
 
   useEffect(() => {
     if (isOpen && projectId) {
@@ -71,6 +75,63 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
     });
   };
 
+  const handleVersionSelect = (versionId: number) => {
+    setSelectedVersions((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(versionId)) {
+        newSet.delete(versionId);
+      } else {
+        // Only allow 2 versions to be selected
+        if (newSet.size >= 2) {
+          // Remove the first selected version
+          const firstId = Array.from(newSet)[0];
+          newSet.delete(firstId);
+        }
+        newSet.add(versionId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleStartCompare = async () => {
+    if (selectedVersions.size !== 2) return;
+
+    const [versionAId, versionBId] = Array.from(selectedVersions);
+    const versionA = versions.find((v) => v.id === versionAId);
+    const versionB = versions.find((v) => v.id === versionBId);
+
+    if (!versionA || !versionB) return;
+
+    try {
+      // Enter diff mode
+      await enterDiffMode(
+        {
+          id: versionA.id,
+          version_number: versionA.version_number,
+          version_type: versionA.version_type,
+        },
+        {
+          id: versionB.id,
+          version_number: versionB.version_number,
+          version_type: versionB.version_type,
+        }
+      );
+
+      // Close modal and reset state
+      setCompareMode(false);
+      setSelectedVersions(new Set());
+      onClose();
+    } catch (error) {
+      console.error('Failed to enter diff mode:', error);
+      setError('Failed to compare versions. Please try again.');
+    }
+  };
+
+  const handleToggleCompareMode = () => {
+    setCompareMode(!compareMode);
+    setSelectedVersions(new Set());
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -81,10 +142,29 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Version History</h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Published versions with annotations
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Version History</h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {compareMode ? 'Select two versions to compare' : 'Published versions with annotations'}
+              </p>
+            </div>
+            {!isLoading && versions.length >= 2 && (
+              <button
+                onClick={handleToggleCompareMode}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                  compareMode
+                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
+                    : 'bg-violet-600 hover:bg-violet-700 text-white'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                {compareMode ? 'Cancel' : 'Compare Versions'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Body */}
@@ -112,13 +192,33 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
             </div>
           ) : (
             <div className="space-y-3">
-              {versions.map((version) => (
-                <div
-                  key={version.id}
-                  className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+              {versions.map((version) => {
+                const isSelected = selectedVersions.has(version.id);
+                return (
+                  <div
+                    key={version.id}
+                    onClick={() => compareMode && handleVersionSelect(version.id)}
+                    className={`p-4 border rounded-lg transition-colors ${
+                      isSelected
+                        ? 'border-violet-600 dark:border-violet-500 bg-violet-50 dark:bg-violet-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    } ${compareMode ? 'cursor-pointer' : ''}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1">
+                        {/* Checkbox for compare mode */}
+                        {compareMode && (
+                          <div className="pt-1">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleVersionSelect(version.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 text-violet-600 border-gray-300 rounded focus:ring-violet-500"
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                           {version.version_number}
@@ -166,42 +266,75 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
                           </p>
                         )}
                       </div>
-                    </div>
+                        </div>
+                      </div>
 
-                    <button
-                      onClick={() => handleDownload(version)}
-                      disabled={!version.download_url}
-                      className="ml-4 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-                      title={version.download_url ? 'Download this version' : 'Download URL expired'}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Download
-                    </button>
+                      {/* Download button - hide in compare mode */}
+                      {!compareMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(version);
+                          }}
+                          disabled={!version.download_url}
+                          className="ml-4 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                          title={version.download_url ? 'Download this version' : 'Download URL expired'}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors"
-          >
-            Close
-          </button>
-          {!isLoading && versions.length > 0 && (
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center gap-3">
+          {/* Left side: comparison info */}
+          <div className="flex-1">
+            {compareMode && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {selectedVersions.size === 0 && 'Select two versions to compare'}
+                {selectedVersions.size === 1 && 'Select one more version'}
+                {selectedVersions.size === 2 && 'Ready to compare'}
+              </p>
+            )}
+          </div>
+
+          {/* Right side: action buttons */}
+          <div className="flex gap-3">
             <button
-              onClick={fetchVersions}
-              className="px-4 py-2 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors"
             >
-              Refresh
+              Close
             </button>
-          )}
+            {!isLoading && versions.length > 0 && !compareMode && (
+              <button
+                onClick={fetchVersions}
+                className="px-4 py-2 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg transition-colors"
+              >
+                Refresh
+              </button>
+            )}
+            {compareMode && selectedVersions.size === 2 && (
+              <button
+                onClick={handleStartCompare}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Start Comparison
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

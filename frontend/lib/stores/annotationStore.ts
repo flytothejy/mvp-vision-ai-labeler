@@ -237,6 +237,21 @@ interface AnnotationState {
   isUndoing: boolean;
   isRedoing: boolean;
 
+  // Phase 11: Version Diff Mode
+  diffMode: {
+    enabled: boolean;
+    versionA: { id: number; version_number: string; version_type: string } | null;
+    versionB: { id: number; version_number: string; version_type: string } | null;
+    viewMode: 'overlay' | 'side-by-side' | 'animation';
+    diffData: any | null; // Full diff response from API
+    filters: {
+      showAdded: boolean;
+      showRemoved: boolean;
+      showModified: boolean;
+      showUnchanged: boolean;
+    };
+  };
+
   // ========================================================================
   // Actions
   // ========================================================================
@@ -323,6 +338,14 @@ interface AnnotationState {
   clearImageSelection: () => void;
   isImageSelected: (id: string) => boolean;
 
+  // Phase 11: Version Diff
+  enterDiffMode: (versionA: any, versionB: any) => Promise<void>;
+  exitDiffMode: () => Promise<void>;
+  setDiffViewMode: (mode: 'overlay' | 'side-by-side' | 'animation') => void;
+  setDiffFilter: (filter: keyof typeof initialState.diffMode.filters, value: boolean) => void;
+  switchDiffVersion: (side: 'A' | 'B', version: any) => Promise<void>;
+  getDiffForCurrentImage: () => any | null;
+
   // Reset
   reset: () => void;
 }
@@ -393,6 +416,19 @@ const initialState = {
   projectLocks: [],
   isUndoing: false,
   isRedoing: false,
+  diffMode: {
+    enabled: false,
+    versionA: null,
+    versionB: null,
+    viewMode: 'overlay',
+    diffData: null,
+    filters: {
+      showAdded: true,
+      showRemoved: true,
+      showModified: true,
+      showUnchanged: false,
+    },
+  },
 };
 
 // ============================================================================
@@ -1149,6 +1185,209 @@ export const useAnnotationStore = create<AnnotationState>()(
       isImageSelected: (id) => {
         const { selectedImageIds } = get();
         return selectedImageIds.includes(id);
+      },
+
+      // ======================================================================
+      // Phase 11: Version Diff
+      // ======================================================================
+
+      enterDiffMode: async (versionA, versionB) => {
+        try {
+          set({ loading: true });
+
+          console.log('[DiffMode] Entering diff mode:', versionA.version_number, 'vs', versionB.version_number);
+
+          // Import API function
+          const { compareVersions } = await import('@/lib/api/version-diff');
+
+          // Fetch diff data from backend
+          const diffData = await compareVersions(versionA.id, versionB.id);
+
+          console.log('[DiffMode] Diff data loaded:', {
+            totalImages: diffData.summary?.total_images,
+            imagesWithChanges: diffData.summary?.images_with_changes,
+            totalChanges: diffData.summary?.total_changes,
+            totalAdded: diffData.summary?.total_added,
+            totalRemoved: diffData.summary?.total_removed,
+            totalModified: diffData.summary?.total_modified,
+            imageDiffsCount: Object.keys(diffData.image_diffs || {}).length,
+          });
+
+          // Debug: Log sample image diff data
+          const imageIds = Object.keys(diffData.image_diffs || {});
+          console.log('[DiffMode] image_diffs keys (first 10):', imageIds.slice(0, 10));
+          if (imageIds.length > 0) {
+            const sampleId = imageIds[0];
+            const sampleDiff = diffData.image_diffs[sampleId];
+            console.log('[DiffMode] Sample image diff for', sampleId, ':', {
+              added: sampleDiff?.added?.length || 0,
+              removed: sampleDiff?.removed?.length || 0,
+              modified: sampleDiff?.modified?.length || 0,
+              unchanged: sampleDiff?.unchanged?.length || 0,
+            });
+          }
+
+          // Debug: Log current image IDs (from store)
+          const { images } = get();
+          console.log('[DiffMode] Current image IDs (first 10):', images.slice(0, 10).map(img => img.id));
+
+          // Enter diff mode
+          set({
+            diffMode: {
+              enabled: true,
+              versionA,
+              versionB,
+              viewMode: 'overlay',
+              diffData,
+              filters: {
+                showAdded: true,
+                showRemoved: true,
+                showModified: true,
+                showUnchanged: false,
+              },
+            },
+            annotations: [], // Phase 11: Clear regular annotations in diff mode
+            loading: false,
+            // Disable editing in diff mode
+            tool: 'select',
+          });
+
+          console.log('[DiffMode] Entered successfully:', versionA.version_number, 'vs', versionB.version_number);
+        } catch (error) {
+          console.error('[DiffMode] Failed to enter:', error);
+          set({ loading: false, error: 'Failed to load version diff' });
+        }
+      },
+
+      exitDiffMode: async () => {
+        const { currentImage, project, currentTask } = get();
+
+        console.log('[DiffMode] Exiting diff mode...');
+
+        // Reset diff mode state
+        set({
+          diffMode: {
+            enabled: false,
+            versionA: null,
+            versionB: null,
+            viewMode: 'overlay',
+            diffData: null,
+            filters: {
+              showAdded: true,
+              showRemoved: true,
+              showModified: true,
+              showUnchanged: false,
+            },
+          },
+        });
+
+        // Optionally reload current image annotations (ignore errors)
+        if (currentImage && project && currentTask) {
+          try {
+            console.log('[DiffMode] Reloading annotations for current image:', currentImage.id);
+            const { getProjectAnnotations } = await import('@/lib/api/annotations');
+            const anns = await getProjectAnnotations(
+              project.id,
+              currentImage.id,
+              currentTask
+            );
+            set({ annotations: anns });
+            console.log('[DiffMode] Annotations reloaded successfully:', anns.length);
+          } catch (error) {
+            // Ignore reload errors - diff mode is already exited
+            console.warn('[DiffMode] Could not reload annotations (this is OK):', error instanceof Error ? error.message : error);
+          }
+        }
+
+        console.log('[DiffMode] Exited successfully');
+      },
+
+      setDiffViewMode: (mode) => {
+        set((state) => ({
+          diffMode: {
+            ...state.diffMode,
+            viewMode: mode,
+          },
+        }));
+      },
+
+      setDiffFilter: (filter, value) => {
+        set((state) => ({
+          diffMode: {
+            ...state.diffMode,
+            filters: {
+              ...state.diffMode.filters,
+              [filter]: value,
+            },
+          },
+        }));
+      },
+
+      switchDiffVersion: async (side, version) => {
+        const { diffMode } = get();
+        if (!diffMode.enabled) return;
+
+        try {
+          set({ loading: true });
+
+          const { compareVersions } = await import('@/lib/api/version-diff');
+
+          const newVersionA = side === 'A' ? version : diffMode.versionA;
+          const newVersionB = side === 'B' ? version : diffMode.versionB;
+
+          if (!newVersionA || !newVersionB) return;
+
+          console.log('[DiffMode] Comparing versions:', newVersionA.version_number, 'vs', newVersionB.version_number);
+
+          // Fetch new diff data
+          const diffData = await compareVersions(newVersionA.id, newVersionB.id);
+
+          console.log('[DiffMode] Diff data loaded:', {
+            totalImages: diffData.summary?.total_images,
+            imagesWithChanges: diffData.summary?.images_with_changes,
+            totalChanges: diffData.summary?.total_changes,
+            imageDiffsCount: Object.keys(diffData.image_diffs || {}).length,
+          });
+
+          // Debug: Log sample image diff data
+          const imageIds = Object.keys(diffData.image_diffs || {});
+          if (imageIds.length > 0) {
+            const sampleId = imageIds[0];
+            const sampleDiff = diffData.image_diffs[sampleId];
+            console.log('[DiffMode] Sample image diff for', sampleId, ':', {
+              added: sampleDiff?.added?.length || 0,
+              removed: sampleDiff?.removed?.length || 0,
+              modified: sampleDiff?.modified?.length || 0,
+              unchanged: sampleDiff?.unchanged?.length || 0,
+            });
+          }
+
+          set({
+            diffMode: {
+              ...diffMode,
+              versionA: newVersionA,
+              versionB: newVersionB,
+              diffData,
+            },
+            annotations: [], // Phase 11: Clear annotations when switching versions
+            loading: false,
+          });
+
+          console.log('[DiffMode] Switched version:', side, '→', version.version_number);
+        } catch (error) {
+          console.error('[DiffMode] Failed to switch version:', error);
+          set({ loading: false, error: 'Failed to load version diff' });
+        }
+      },
+
+      getDiffForCurrentImage: () => {
+        const { diffMode, currentImage } = get();
+        if (!diffMode.enabled || !diffMode.diffData || !currentImage) {
+          return null;
+        }
+
+        // Return diff data for current image
+        return diffMode.diffData.image_diffs?.[currentImage.id] || null;
       },
 
       // ======================================================================

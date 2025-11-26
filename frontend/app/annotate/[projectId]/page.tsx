@@ -242,6 +242,13 @@ export default function AnnotationPage() {
   useEffect(() => {
     if (!currentImage || !projectId) return;
 
+    // Phase 11: Skip loading annotations in diff mode (use diffData instead)
+    const diffMode = useAnnotationStore.getState().diffMode;
+    if (diffMode.enabled) {
+      console.log('[loadAnnotations] Skipping in diff mode');
+      return;
+    }
+
     const loadAnnotations = async () => {
       try {
         const annotationsData = await getProjectAnnotations(projectId, currentImage.id);

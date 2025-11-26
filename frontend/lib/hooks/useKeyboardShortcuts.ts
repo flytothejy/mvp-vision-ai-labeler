@@ -7,6 +7,8 @@
 import { useEffect } from 'react';
 import { useAnnotationStore } from '@/lib/stores/annotationStore';
 import { deleteAnnotation as deleteAnnotationAPI } from '@/lib/api/annotations';
+import { confirm } from '@/lib/stores/confirmStore';
+import { toast } from '@/lib/stores/toastStore';
 
 export function useKeyboardShortcuts() {
   const {
@@ -189,17 +191,23 @@ export function useKeyboardShortcuts() {
           // Delete selected annotation
           if (selectedAnnotationId) {
             e.preventDefault();
-            if (confirm('Delete selected annotation?')) {
-              // Delete from backend first, then from store
-              deleteAnnotationAPI(selectedAnnotationId)
-                .then(() => {
+            confirm({
+              title: '레이블 삭제',
+              message: '선택한 레이블을 삭제하시겠습니까?',
+              confirmText: '삭제',
+              cancelText: '취소',
+              onConfirm: async () => {
+                try {
+                  // Delete from backend first, then from store
+                  await deleteAnnotationAPI(selectedAnnotationId);
                   deleteAnnotation(selectedAnnotationId);
-                })
-                .catch((err) => {
+                  toast.success('레이블을 삭제했습니다.');
+                } catch (err) {
                   console.error('Failed to delete annotation:', err);
-                  // TODO: Show error toast
-                });
-            }
+                  toast.error('레이블 삭제에 실패했습니다.');
+                }
+              },
+            });
           }
           break;
         case 'escape':

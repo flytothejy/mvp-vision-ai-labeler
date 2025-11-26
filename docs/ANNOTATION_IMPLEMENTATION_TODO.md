@@ -2,7 +2,7 @@
 
 **Project**: Vision AI Labeler - Annotation Interface
 **Start Date**: 2025-11-14
-**Last Updated**: 2025-11-25
+**Last Updated**: 2025-11-25 (Late Night)
 
 ---
 
@@ -36,7 +36,7 @@
 - **Phase 9.4: Demo Deployment ✅ Complete** (Cloudflare Tunnel + Railway Frontend)
 - **Phase 10: Application Performance Optimization ✅ Complete** (Quick Wins - 80% latency reduction)
 
-**Next Up**: Phase 8.3 (Real-time Annotation Updates) or Phase 11 (AI Integration)
+**Next Up**: Phase 11 (Version Diff & Comparison) or Phase 8.3 (Real-time Updates)
 
 ---
 
@@ -819,10 +819,18 @@ Cloudflare R2 (Image Storage)
 - `docs/deployment/railway_frontend_deployment.md`
 - `docs/deployment/deployment_checklist.md`
 - `frontend/.env.production.template`
+- `backend/check_db.py` (User DB 연결 확인 유틸리티)
+- `backend/init_db.py` (테스트 사용자 초기화 스크립트)
+- `docs/r2-cors-config.json` (R2 CORS 정책 설정 파일)
 
 **Files Modified**:
-- `backend/.env` (CORS origins comment update)
+- `backend/.env` (CORS origins + User DB configuration fix)
 - `frontend/.gitignore` (.env.production added)
+
+**Post-Deployment Issues Fixed** (2025-11-25 Late Night):
+- [x] User DB configuration error (port 5432 → 5433, name platform → users)
+- [x] R2 CORS policy configuration for Railway frontend
+- [x] Database utility scripts for troubleshooting
 
 **Benefits**:
 - ✅ 84% cost reduction (~$40 → ~$6.5/month)
@@ -1008,22 +1016,230 @@ async def get_current_user(...):
 
 ---
 
-## Phase 10: AI Integration ⏸️ PENDING
+## Phase 11: Version Diff & Comparison ⏸️ PENDING
+
+**Duration**: 2-3 days (18-22h)
+**Status**: Pending
+**Goal**: Git-style diff visualization for annotation versions
+
+### Overview
+
+Leverage existing version management system to provide visual comparison between annotation versions, similar to git diff functionality.
+
+**Use Cases**:
+- Review changes between working and published versions
+- Compare different annotators' work on same images
+- Track annotation evolution over time
+- Quality assurance and validation
+- Training data consistency checks
+
+### 11.1 Backend: Version Comparison API (6-8h)
+
+**11.1.1 Diff Calculation Engine** (3-4h)
+- [x] Implement annotation diff algorithm
+  - Compare two versions by image_id
+  - Categorize annotations: `added`, `removed`, `modified`, `unchanged`
+  - Calculate modification details (bbox moved, class changed, etc.)
+- [x] Create `AnnotationDiff` model/schema
+  ```python
+  {
+    "image_id": "img_001",
+    "version_a": "v1.0",
+    "version_b": "v2.0",
+    "added": [...],      # New annotations in version_b
+    "removed": [...],    # Deleted from version_a
+    "modified": [...],   # Changed annotations
+    "unchanged": [...]   # No changes
+  }
+  ```
+- [x] Support multiple diff modes:
+  - Bounding box position changes (IoU-based matching)
+  - Class label changes
+  - Attribute changes
+  - Confidence changes
+- [x] **Hybrid data source** (Working vs Published):
+  - **Working/Draft versions**: Load from DB (`annotations` table)
+  - **Published versions**: Load from R2 (`annotations/exports/{project_id}/{task_type}/{version}/annotations.json`)
+  - Enables "Working vs v1.0" comparisons before publishing
+
+**11.1.2 Comparison Endpoints** (2-3h)
+- [x] `GET /api/v1/version-diff/versions/{version_a}/compare/{version_b}`
+  - Query params: `image_id` (optional - single image or all)
+  - Response: Diff summary + detailed changes
+- [x] `GET /api/v1/version-diff/versions/{version_a}/compare/{version_b}/summary`
+  - Compact summary-only response for quick overview
+- [ ] `GET /api/v1/versions/{version_a}/compare/{version_b}/summary`
+  - Statistics: total added, removed, modified counts
+  - Per-class breakdown
+  - Per-image change counts
+- [ ] Add pagination for large datasets
+
+**11.1.3 Performance Optimization** (1h)
+- [ ] Cache diff results (Redis - 5min TTL)
+- [ ] Batch processing for large version comparisons
+- [ ] Add database indexes on version lookups
+
+### 11.2 Frontend: Diff Visualization (8-10h)
+
+**11.2.1 Version Selector UI** (2h)
+- [ ] Version comparison dropdown (select 2 versions)
+- [ ] Quick shortcuts: "Working vs Latest", "v1.0 vs v2.0"
+- [ ] Show version metadata (created_at, created_by, stats)
+- [ ] Validation: prevent comparing same version
+
+**11.2.2 Diff Summary Panel** (2h)
+- [ ] Overview statistics card
+  - Total changes: Added (+5), Removed (-3), Modified (~7)
+  - Per-class breakdown (color-coded)
+  - Images affected: 12/150
+- [ ] Filter controls
+  - Show only: Added | Removed | Modified | All
+  - Filter by class
+  - Filter by image
+- [ ] Export diff report (CSV/JSON)
+
+**11.2.3 Canvas Diff Overlay** (4-6h)
+- [ ] **Overlay Mode** (default): Show both versions on same canvas
+  - Version A (old): Semi-transparent red (#ff000050)
+  - Version B (new): Semi-transparent green (#00ff0050)
+  - Unchanged: Gray (#80808030)
+  - Modified: Yellow outline (#ffff00)
+- [ ] **Side-by-Side Mode**: Split canvas view
+  - Left: Version A
+  - Right: Version B
+  - Synchronized zoom/pan
+  - Diff highlights on both sides
+- [ ] **Animation Mode**: Toggle between versions
+  - Smooth transition (0.3s fade)
+  - Keyboard shortcut: Space to toggle
+- [ ] Diff legend
+  - Color indicators for each change type
+  - Counts per category
+  - Toggle visibility per category
+
+### 11.3 Advanced Features (4-6h)
+
+**11.3.1 Image-by-Image Navigation** (2h)
+- [ ] Navigate images with changes only
+  - Skip unchanged images
+  - Keyboard: N (next change), P (previous change)
+- [ ] Change summary per image
+  - Show diff count badge on thumbnail
+  - Red badge: has removals/modifications
+  - Green badge: only additions
+
+**11.3.2 Annotation Detail Comparison** (2-3h)
+- [ ] Side-by-side property comparison
+  ```
+  Version A         |  Version B
+  ------------------|------------------
+  Class: "car"      |  Class: "truck"  ✎
+  BBox: [10,20,50]  |  BBox: [12,20,50] ✎
+  Conf: 0.95        |  Conf: 0.95
+  ```
+- [ ] Highlight modified fields
+- [ ] Show old → new values with arrow
+- [ ] Include modification metadata (when, who)
+
+**11.3.3 Bulk Accept/Reject** (1-2h)
+- [ ] Accept all changes from version B → A
+- [ ] Reject specific changes
+- [ ] Create new version from diff selection
+- [ ] Conflict resolution UI (if both versions modified)
+
+### 11.4 Integration & Testing (2h)
+
+- [ ] Add "Compare Versions" button to version history panel
+- [ ] Keyboard shortcut: `Ctrl+D` to toggle diff mode
+- [ ] Toast notifications for diff calculations
+- [ ] Loading states for large diffs
+- [ ] Error handling: version not found, no annotations
+- [ ] E2E test: compare two versions, verify diff accuracy
+
+### Technical Implementation Notes
+
+**Diff Algorithm**:
+```python
+def calculate_diff(version_a, version_b):
+    """
+    Compare annotations by matching logic:
+    1. Same annotation_id → Check for modifications
+    2. Similar bbox (IoU > 0.8) → Mark as modified
+    3. No match → New annotation (added/removed)
+    """
+    added = []
+    removed = []
+    modified = []
+    unchanged = []
+
+    for ann_b in version_b.annotations:
+        match = find_match(ann_b, version_a.annotations)
+        if not match:
+            added.append(ann_b)
+        elif has_changes(match, ann_b):
+            modified.append({"old": match, "new": ann_b})
+        else:
+            unchanged.append(ann_b)
+
+    for ann_a in version_a.annotations:
+        if not find_match(ann_a, version_b.annotations):
+            removed.append(ann_a)
+
+    return {"added": added, "removed": removed, ...}
+```
+
+**Canvas Rendering**:
+```typescript
+// Render diff overlays
+annotations.forEach(ann => {
+  const color = getDiffColor(ann.diffStatus);
+  drawBBox(ann.bbox, color, opacity);
+  if (ann.diffStatus === 'modified') {
+    drawComparisonArrow(ann.oldBbox, ann.newBbox);
+  }
+});
+```
+
+**Performance Considerations**:
+- Lazy load diff data (only calculate when requested)
+- Incremental diff (only compare changed images)
+- Web Worker for diff calculation (large datasets)
+- Virtual scrolling for image list with changes
+
+**Total**: 18-22h
+**Priority**: High (valuable for QA and team collaboration)
+**Dependencies**: Phase 4 (Version Management) complete
+
+**Files to Create**:
+- `backend/app/api/v1/endpoints/version_diff.py`
+- `backend/app/services/diff_service.py`
+- `frontend/components/annotation/VersionDiffPanel.tsx`
+- `frontend/components/annotation/DiffCanvas.tsx`
+- `frontend/lib/utils/diffCalculator.ts`
+
+**Files to Modify**:
+- `frontend/components/annotation/RightPanel.tsx` (add diff tab)
+- `backend/app/api/v1/router.py` (register diff endpoints)
+- `frontend/lib/stores/annotationStore.ts` (add diff state)
+
+---
+
+## Phase 12: AI Integration ⏸️ PENDING
 
 **Duration**: Weeks 13-14 (60h)
 **Status**: Pending
 
-### 10.1 Auto-Annotation (20h)
+### 12.1 Auto-Annotation (20h)
 - [ ] Model integration (YOLOv8, SAM)
 - [ ] Auto-detect objects in image
 - [ ] Confidence scores and filtering
 
-### 10.2 Smart Assist (15h)
+### 12.2 Smart Assist (15h)
 - [ ] Object proposals
 - [ ] Edge snapping
 - [ ] Similar object detection
 
-### 10.3 Model Training (25h)
+### 12.3 Model Training (25h)
 - [ ] Export to training format
 - [ ] Integration with training pipeline
 - [ ] Model versioning
@@ -1032,27 +1248,27 @@ async def get_current_user(...):
 
 ---
 
-## Phase 11: Polish & Optimization ⏸️ PENDING
+## Phase 13: Polish & Optimization ⏸️ PENDING
 
 **Duration**: Week 15 (40h)
 **Status**: Pending
 
-### 11.1 Performance (10h)
+### 13.1 Performance (10h)
 - [ ] Frontend bundle optimization
 - [ ] Lazy loading components
 - [ ] Image preloading
 
-### 11.2 UX Improvements (15h)
+### 13.2 UX Improvements (15h)
 - [ ] Keyboard shortcut guide
 - [ ] Onboarding tour
 - [ ] Error handling polish
 
-### 11.3 Testing & QA (15h)
+### 13.3 Testing & QA (15h)
 - [ ] E2E test coverage
 - [ ] Load testing
 - [ ] Bug fixes
 
-**Dependencies**: Phase 10 completion
+**Dependencies**: Phase 12 completion
 
 ---
 
@@ -1079,6 +1295,90 @@ async def get_current_user(...):
 ---
 
 ## Session Notes (Recent)
+
+### 2025-11-25 (Late Night): Phase 9.4 Railway Deployment Troubleshooting & R2 CORS ✅
+
+**Task**: Railway 배포 테스트 및 인증/CORS 문제 해결
+
+**Status**: ✅ Complete (~3 hours implementation time)
+
+**Context**: Phase 9.4 완료 후 Railway 배포 테스트 중 401 인증 오류 및 R2 CORS 문제 발견
+
+**Problems Discovered**:
+1. **401 Authentication Error**: Railway/Local frontend 모두 `admin@example.com / admin123` 로그인 실패
+2. **User DB Configuration Error**: `.env` 파일의 User DB 설정이 잘못됨
+3. **R2 CORS Policy Missing**: Railway frontend에서 R2 이미지 로드 실패 (CORS 차단)
+
+**Root Causes Identified**:
+1. **User DB Port Mismatch**: `.env`에서 port 5432로 설정, 실제 Docker 컨테이너는 port 5433에서 실행
+2. **User DB Name Mismatch**: `.env`에서 "platform" DB, 실제 Docker 컨테이너는 "users" DB 사용
+3. **R2 CORS Not Configured**: Cloudflare R2 버킷에 Railway frontend URL CORS 정책 미설정
+
+**Implementation Summary**:
+
+1. **User DB Configuration Fix** (1h)
+   ```bash
+   # backend/.env
+   USER_DB_PORT=5432 → 5433  # Docker container port mapping
+   USER_DB_NAME=platform → users  # Actual database name in container
+   ```
+   - Docker 컨테이너 확인: `platform-postgres-user-tier0` (port 5433)
+   - Database 확인: `psql -h localhost -p 5433 -U admin -l`
+   - Admin 사용자 확인: `check_db.py` 스크립트로 검증 (5명 사용자 존재)
+
+2. **Database Utilities Created** (1h)
+   - `backend/check_db.py`: User DB 연결 및 사용자 확인 유틸리티
+   - `backend/init_db.py`: 테스트 사용자 초기화 스크립트
+   - 두 스크립트 모두 포트 설정 오류 디버깅에 활용
+
+3. **R2 CORS Configuration** (1h)
+   - `docs/r2-cors-config.json` 생성: Railway frontend URL 포함 CORS 정책
+   ```json
+   {
+     "AllowedOrigins": [
+       "http://localhost:3000",
+       "http://localhost:3001",
+       "http://localhost:3010",
+       "https://mvp-vision-ai-labeler-production.up.railway.app"
+     ],
+     "AllowedMethods": ["GET", "HEAD"],
+     "AllowedHeaders": ["*"],
+     "MaxAgeSeconds": 3600
+   }
+   ```
+   - Cloudflare 대시보드에서 수동 설정 필요 (wrangler CLI 미설치)
+
+4. **Branch Management**
+   - `production` 브랜치에서 변경사항 커밋 및 푸시
+   - `develop` 브랜치로 병합 (91 files changed)
+
+**Files Created**:
+- `backend/check_db.py` (DB 연결 및 사용자 확인 유틸리티)
+- `backend/init_db.py` (테스트 사용자 초기화 스크립트)
+- `docs/r2-cors-config.json` (R2 CORS 정책 설정 파일)
+
+**Files Modified** (`.env` - gitignored):
+- `backend/.env`:
+  - `USER_DB_PORT`: 5432 → 5433
+  - `USER_DB_NAME`: platform → users
+
+**Key Learnings**:
+- Docker 컨테이너 포트 매핑 확인 중요 (host:5433 → container:5432)
+- 데이터베이스 이름은 `docker exec` 명령으로 확인 가능 (`psql -l`)
+- R2 CORS 정책은 프론트엔드 배포 시 반드시 설정 필요
+- Railway 배포 시 환경 변수 검증 스크립트가 유용함
+
+**Next Steps**:
+- Cloudflare 대시보드에서 R2 버킷 CORS 정책 적용
+  - `training-datasets` 버킷
+  - `annotations` 버킷
+- Railway 프론트엔드에서 이미지 로드 테스트
+
+**Phase 9 Progress**: 34/46h = 74% (Phase 9.1, 9.3, 9.4 complete, troubleshooting done)
+
+**Git Commits**:
+- `bad16f4`: Add R2 CORS configuration and database utilities for Railway deployment
+- `bd770be`: Merge production branch to develop
 
 ### 2025-11-25 (PM - Late): Phase 9.5 Railway Performance Optimization ✅
 

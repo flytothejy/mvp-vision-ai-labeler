@@ -25,6 +25,10 @@ import type { LockAcquireResponse } from '@/lib/api/image-locks';
 // Phase 8.5.1: Conflict Dialog
 import { AnnotationConflictDialog } from '../annotations/AnnotationConflictDialog';
 import type { ConflictInfo } from '../annotations/AnnotationConflictDialog';
+// Phase 11: Diff Mode Components
+import DiffToolbar from './DiffToolbar';
+import DiffActions from './DiffActions';
+import DiffViewModeSelector from './DiffViewModeSelector';
 
 export default function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -72,6 +76,9 @@ export default function Canvas() {
     canRedo,
     // Phase 2.10.3: Minimap state
     showMinimap,
+    // Phase 11: Diff mode
+    diffMode,
+    getDiffForCurrentImage,
   } = useAnnotationStore();
 
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -641,6 +648,68 @@ export default function Canvas() {
     }
   };
 
+  // Phase 11: Helper to convert AnnotationSnapshot to Annotation format
+  const snapshotToAnnotation = (snapshot: any, tempId: string): any => {
+    // Convert backend geometry format to frontend format
+    let geometry: any;
+
+    if (snapshot.annotation_type === 'bbox' && snapshot.geometry) {
+      // Handle both formats:
+      // - DB/Working: {x, y, width, height}
+      // - R2/Published: {bbox: [x, y, w, h], type, image_width, image_height}
+      if (snapshot.geometry.bbox && Array.isArray(snapshot.geometry.bbox)) {
+        // R2 format: already has bbox array
+        geometry = {
+          type: 'bbox',
+          bbox: snapshot.geometry.bbox
+        };
+      } else {
+        // DB format: convert {x, y, width, height} to bbox array
+        geometry = {
+          type: 'bbox',
+          bbox: [
+            snapshot.geometry.x || 0,
+            snapshot.geometry.y || 0,
+            snapshot.geometry.width || 0,
+            snapshot.geometry.height || 0
+          ]
+        };
+      }
+    } else if (snapshot.annotation_type === 'polygon' && snapshot.geometry) {
+      // Polygon: {points: [[x,y], ...]} → same format
+      geometry = {
+        type: 'polygon',
+        points: snapshot.geometry.points || []
+      };
+    } else if (snapshot.annotation_type === 'polyline' && snapshot.geometry) {
+      geometry = {
+        type: 'polyline',
+        points: snapshot.geometry.points || []
+      };
+    } else if (snapshot.annotation_type === 'circle' && snapshot.geometry) {
+      geometry = {
+        type: 'circle',
+        center: snapshot.geometry.center || [0, 0],
+        radius: snapshot.geometry.radius || 0
+      };
+    } else {
+      // Fallback: spread as-is
+      geometry = {
+        type: snapshot.annotation_type,
+        ...snapshot.geometry,
+      };
+    }
+
+    return {
+      id: tempId,
+      image_id: snapshot.image_id,
+      geometry,
+      class_id: snapshot.class_id,
+      class_name: snapshot.class_name,
+      annotationType: snapshot.annotation_type,
+    };
+  };
+
   // Draw annotations using Tool system
   const drawAnnotations = (ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, zoom: number) => {
     if (!project || !canvasRef.current) return;
@@ -659,6 +728,72 @@ export default function Canvas() {
       darkMode: preferences.darkMode,
     };
 
+    // Phase 11: Diff mode rendering
+    if (diffMode.enabled && diffMode.viewMode === 'overlay') {
+      const imageDiff = getDiffForCurrentImage();
+
+      if (imageDiff) {
+        // Render diff annotations with color coding
+        const currentClasses = getCurrentClasses();
+
+        // 1. Render unchanged annotations (dimmed/gray)
+        imageDiff.unchanged?.forEach((snapshot: any, index: number) => {
+          const ann = snapshotToAnnotation(snapshot, `unchanged-${index}`);
+          const classInfo = ann.class_id ? currentClasses[ann.class_id] : null;
+          const color = 'rgba(156, 163, 175, 0.4)'; // gray-400 with opacity
+
+          const tool = ToolRegistry.getTool(ann.geometry.type);
+          if (tool) {
+            tool.renderAnnotation(renderCtx, ann, false, color, ann.class_name);
+          }
+        });
+
+        // 2. Render removed annotations (red)
+        imageDiff.removed?.forEach((snapshot: any, index: number) => {
+          const ann = snapshotToAnnotation(snapshot, `removed-${index}`);
+          const color = '#ef4444'; // red-500
+
+          const tool = ToolRegistry.getTool(ann.geometry.type);
+          if (tool) {
+            tool.renderAnnotation(renderCtx, ann, false, color, ann.class_name);
+          }
+        });
+
+        // 3. Render added annotations (green)
+        imageDiff.added?.forEach((snapshot: any, index: number) => {
+          const ann = snapshotToAnnotation(snapshot, `added-${index}`);
+          const color = '#22c55e'; // green-500
+
+          const tool = ToolRegistry.getTool(ann.geometry.type);
+          if (tool) {
+            tool.renderAnnotation(renderCtx, ann, false, color, ann.class_name);
+          }
+        });
+
+        // 4. Render modified annotations (yellow/orange)
+        imageDiff.modified?.forEach((modifiedAnn: any, index: number) => {
+          // Render old annotation (dimmed)
+          const oldAnn = snapshotToAnnotation(modifiedAnn.old, `modified-old-${index}`);
+          const oldColor = 'rgba(251, 146, 60, 0.3)'; // orange-400 with low opacity
+          const oldTool = ToolRegistry.getTool(oldAnn.geometry.type);
+          if (oldTool) {
+            oldTool.renderAnnotation(renderCtx, oldAnn, false, oldColor, oldAnn.class_name);
+          }
+
+          // Render new annotation (yellow/orange)
+          const newAnn = snapshotToAnnotation(modifiedAnn.new, `modified-new-${index}`);
+          const newColor = '#f59e0b'; // amber-500
+          const newTool = ToolRegistry.getTool(newAnn.geometry.type);
+          if (newTool) {
+            newTool.renderAnnotation(renderCtx, newAnn, false, newColor, newAnn.class_name);
+          }
+        });
+
+        return; // Skip normal rendering
+      }
+    }
+
+    // Normal rendering (non-diff mode)
     annotations.forEach((ann) => {
       // Skip if annotation is hidden
       if (!isAnnotationVisible(ann.id)) return;
@@ -2828,6 +2963,21 @@ export default function Canvas() {
         return;
       }
 
+      // Phase 11: Escape key to exit diff mode (without confirmation)
+      if (e.key === 'Escape' && diffMode.enabled) {
+        e.preventDefault();
+        console.log('[Canvas] Escape pressed in diff mode, exiting...');
+        const { exitDiffMode } = useAnnotationStore.getState();
+        exitDiffMode().then(() => {
+          console.log('[Canvas] Successfully exited diff mode');
+          toast.success('Exited diff mode');
+        }).catch((error) => {
+          console.error('[Canvas] Failed to exit diff mode:', error);
+          toast.error('Failed to exit diff mode');
+        });
+        return;
+      }
+
       // Phase 2.10.2: Magnifier manual activation (Z key without Ctrl/Cmd) - Toggle mode
       if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
         setManualMagnifierActive(!manualMagnifierActive);
@@ -3356,7 +3506,7 @@ export default function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleConfirmImage, isImageConfirmed, annotations, handleNoObject, selectedImageIds, handleDeleteAllAnnotations, currentImage, selectedAnnotationId, tool, polygonVertices, image, canvasState, selectedVertexIndex, selectedBboxHandle, selectedCircleHandle, polylineVertices, circleCenter, circle3pPoints, undo, redo, canUndo, canRedo]);
+  }, [handleConfirmImage, isImageConfirmed, annotations, handleNoObject, selectedImageIds, handleDeleteAllAnnotations, currentImage, selectedAnnotationId, tool, polygonVertices, image, canvasState, selectedVertexIndex, selectedBboxHandle, selectedCircleHandle, polylineVertices, circleCenter, circle3pPoints, undo, redo, canUndo, canRedo, diffMode]);
 
   // Phase 2.10.2: Z key release handler removed - now using toggle mode instead
   // (Toggle mode is more reliable in remote desktop environments)
@@ -3378,8 +3528,17 @@ export default function Canvas() {
 
   return (
     <div ref={containerRef} className="flex-1 bg-white dark:bg-gray-900 relative overflow-hidden">
-      {/* Tool selector - top center */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-100 dark:bg-gray-800 rounded-lg p-2 flex items-center gap-2 shadow-lg z-10">
+      {/* Phase 11: Diff Mode UI */}
+      {diffMode.enabled ? (
+        <>
+          <DiffToolbar />
+          <DiffActions />
+          <DiffViewModeSelector />
+        </>
+      ) : (
+        <>
+          {/* Tool selector - top center */}
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-100 dark:bg-gray-800 rounded-lg p-2 flex items-center gap-2 shadow-lg z-10">
         <button
           onClick={() => setTool('select')}
           className={`px-4 py-2 rounded transition-all text-sm font-medium flex items-center gap-2 ${
@@ -3502,6 +3661,8 @@ export default function Canvas() {
           </>
         )}
       </div>
+        </>
+      )}
 
       <canvas
         ref={canvasRef}
