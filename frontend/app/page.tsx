@@ -625,7 +625,20 @@ export default function DashboardPage() {
                                     </span>
                                   </p>
                                   <p className="text-xs text-gray-500">
-                                    {new Date(item.timestamp).toLocaleString('ko-KR')}
+                                    {(() => {
+                                      // Backend stores in UTC without 'Z', so we need to add it for correct parsing
+                                      const utcDateString = item.timestamp.endsWith('Z') ? item.timestamp : item.timestamp + 'Z';
+                                      return new Date(utcDateString).toLocaleString('ko-KR', {
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        second: '2-digit',
+                                        hour12: false,
+                                        timeZone: 'Asia/Seoul',
+                                      });
+                                    })()}
                                   </p>
                                 </div>
                               </div>
@@ -656,7 +669,20 @@ export default function DashboardPage() {
                           </div>
                           <div>
                             <dt className="text-xs text-gray-500 mb-1">생성일</dt>
-                            <dd className="text-gray-900">{new Date(project.created_at).toLocaleString('ko-KR')}</dd>
+                            <dd className="text-gray-900">{(() => {
+                              // Backend stores in UTC without 'Z', so we need to add it for correct parsing
+                              const utcDateString = project.created_at.endsWith('Z') ? project.created_at : project.created_at + 'Z';
+                              return new Date(utcDateString).toLocaleString('ko-KR', {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: false,
+                                timeZone: 'Asia/Seoul',
+                              });
+                            })()}</dd>
                           </div>
                           <div>
                             <dt className="text-xs text-gray-500 mb-1">상태</dt>

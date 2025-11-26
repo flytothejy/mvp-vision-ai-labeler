@@ -61,6 +61,7 @@ async def upload_files_to_s3(
     images_count = 0
     total_bytes = 0
     folder_structure = {}
+    COMMIT_BATCH_SIZE = 50  # Commit every 50 images to avoid large transaction
 
     for file in files:
         # Handle ZIP files
@@ -136,6 +137,15 @@ async def upload_files_to_s3(
 
             logger.info(f"Uploaded image: {s3_key} ({len(content)} bytes)")
 
+            # Commit periodically to avoid large transactions
+            if images_count % COMMIT_BATCH_SIZE == 0:
+                labeler_db.commit()
+                logger.debug(f"Committed batch of {COMMIT_BATCH_SIZE} images")
+
+    # Final commit for remaining images
+    labeler_db.commit()
+    logger.debug(f"Final commit completed")
+
     return UploadResult(
         images_count=images_count,
         total_bytes=total_bytes,
@@ -164,6 +174,7 @@ async def upload_zip_with_structure(
     images_count = 0
     total_bytes = 0
     folder_structure = {}
+    COMMIT_BATCH_SIZE = 50  # Commit every 50 images to avoid large transaction
 
     # Read ZIP into memory
     zip_content = await zip_file.read()
@@ -232,6 +243,15 @@ async def upload_zip_with_structure(
                 folder_structure[folder_path] += 1
 
             logger.info(f"Uploaded from ZIP: {s3_key} ({len(content)} bytes)")
+
+            # Commit periodically to avoid large transactions
+            if images_count % COMMIT_BATCH_SIZE == 0:
+                labeler_db.commit()
+                logger.debug(f"Committed batch of {COMMIT_BATCH_SIZE} images from ZIP")
+
+    # Final commit for remaining images
+    labeler_db.commit()
+    logger.debug(f"Final commit completed for ZIP upload")
 
     logger.info(f"ZIP upload complete: {images_count} images, {total_bytes} bytes")
 

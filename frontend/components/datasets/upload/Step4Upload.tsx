@@ -88,8 +88,12 @@ export default function Step4Upload({
           status: 'pending',
         });
       } else {
-        // Overwrite (or new file)
-        filesToUpload.push(mapping.file);
+        // Overwrite (or new file) - Use finalPath as filename to respect folder options
+        const fileWithCorrectPath = new File([mapping.file], mapping.finalPath, {
+          type: mapping.file.type,
+          lastModified: mapping.file.lastModified
+        });
+        filesToUpload.push(fileWithCorrectPath);
         initialStatuses.push({
           path: mapping.finalPath,
           status: 'pending',
@@ -120,15 +124,12 @@ export default function Step4Upload({
         const batchAnnotationFile = (i === numBatches - 1) ? annotationFile : null;
 
         try {
-          // Mark batch files as uploading
+          // Mark batch files as uploading (use exact indices for this batch)
           setFileStatuses(prev => {
             const updated = [...prev];
             for (let j = start; j < end; j++) {
-              const statusIndex = initialStatuses.findIndex((s, idx) =>
-                idx >= start && idx < end && s.status === 'pending'
-              );
-              if (statusIndex !== -1 && updated[statusIndex]) {
-                updated[statusIndex] = { ...updated[statusIndex], status: 'uploading' };
+              if (updated[j] && updated[j].status === 'pending') {
+                updated[j] = { ...updated[j], status: 'uploading' };
               }
             }
             return updated;
@@ -150,16 +151,12 @@ export default function Step4Upload({
             }
           );
 
-          // Mark batch files as success
+          // Mark batch files as success (use exact indices for this batch)
           setFileStatuses(prev => {
             const updated = [...prev];
-            let pendingCount = 0;
-            for (let j = 0; j < updated.length; j++) {
-              if (updated[j].status === 'uploading' || updated[j].status === 'pending') {
-                if (pendingCount < batchFiles.length) {
-                  updated[j] = { ...updated[j], status: 'success' };
-                  pendingCount++;
-                }
+            for (let j = start; j < end; j++) {
+              if (updated[j]) {
+                updated[j] = { ...updated[j], status: 'success' };
               }
             }
             return updated;
@@ -174,20 +171,16 @@ export default function Step4Upload({
         } catch (error) {
           console.error(`Batch ${i + 1}/${numBatches} failed:`, error);
 
-          // Mark batch files as error
+          // Mark batch files as error (use exact indices for this batch)
           setFileStatuses(prev => {
             const updated = [...prev];
-            let pendingCount = 0;
-            for (let j = 0; j < updated.length; j++) {
-              if (updated[j].status === 'uploading' || updated[j].status === 'pending') {
-                if (pendingCount < batchFiles.length) {
-                  updated[j] = {
-                    ...updated[j],
-                    status: 'error',
-                    message: error instanceof Error ? error.message : '업로드 실패'
-                  };
-                  pendingCount++;
-                }
+            for (let j = start; j < end; j++) {
+              if (updated[j]) {
+                updated[j] = {
+                  ...updated[j],
+                  status: 'error',
+                  message: error instanceof Error ? error.message : '업로드 실패'
+                };
               }
             }
             return updated;

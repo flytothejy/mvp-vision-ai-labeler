@@ -113,6 +113,7 @@ export default function Canvas() {
 
   // Phase 2.10.2: Magnifier state
   const [manualMagnifierActive, setManualMagnifierActive] = useState(false);
+  const [magnifierForceOff, setMagnifierForceOff] = useState(false);
   const [magnification, setMagnification] = useState(preferences.magnificationLevel);
 
   // Phase 8.5.2: Image Lock state
@@ -136,6 +137,12 @@ export default function Canvas() {
   useEffect(() => {
     useAnnotationStore.setState({ canvasRef, imageRef });
   }, []);
+
+  // Phase 2.10.2: Reset magnifier force-off when tool changes
+  useEffect(() => {
+    setMagnifierForceOff(false);
+    setManualMagnifierActive(false);
+  }, [tool]);
 
   // Helper to set selectedVertexIndex in store
   const setSelectedVertexIndex = (index: number | null) => {
@@ -162,8 +169,10 @@ export default function Canvas() {
 
   // Phase 2.10.2: Determine if magnifier should be shown
   const shouldShowMagnifier =
-    manualMagnifierActive || // Z key pressed
-    (isDrawingTool(tool) && preferences.autoMagnifier); // Auto mode
+    !magnifierForceOff && ( // Not force disabled by user
+      manualMagnifierActive || // Z key pressed
+      (isDrawingTool(tool) && preferences.autoMagnifier) // Auto mode
+    );
 
   // Phase 2.7: Calculate draft annotation count
   const draftAnnotations = annotations.filter(ann => {
@@ -2955,10 +2964,11 @@ export default function Canvas() {
   // Phase 2.7: Keyboard shortcuts for Canvas
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle shortcuts when typing in input fields
+      // Don't handle shortcuts when typing in input fields or when modals are open
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        showClassSelector // Don't interfere with ClassSelectorModal keyboard events
       ) {
         return;
       }
@@ -2980,7 +2990,21 @@ export default function Canvas() {
 
       // Phase 2.10.2: Magnifier manual activation (Z key without Ctrl/Cmd) - Toggle mode
       if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
-        setManualMagnifierActive(!manualMagnifierActive);
+        // Calculate current magnifier state
+        const currentlyShown = !magnifierForceOff && (
+          manualMagnifierActive ||
+          (isDrawingTool(tool) && preferences.autoMagnifier)
+        );
+
+        if (currentlyShown) {
+          // Magnifier is currently shown, force it off
+          setMagnifierForceOff(true);
+          setManualMagnifierActive(false);
+        } else {
+          // Magnifier is hidden, turn on manual magnifier
+          setMagnifierForceOff(false);
+          setManualMagnifierActive(true);
+        }
         return;
       }
 
@@ -3506,7 +3530,7 @@ export default function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleConfirmImage, isImageConfirmed, annotations, handleNoObject, selectedImageIds, handleDeleteAllAnnotations, currentImage, selectedAnnotationId, tool, polygonVertices, image, canvasState, selectedVertexIndex, selectedBboxHandle, selectedCircleHandle, polylineVertices, circleCenter, circle3pPoints, undo, redo, canUndo, canRedo, diffMode]);
+  }, [handleConfirmImage, isImageConfirmed, annotations, handleNoObject, selectedImageIds, handleDeleteAllAnnotations, currentImage, selectedAnnotationId, tool, polygonVertices, image, canvasState, selectedVertexIndex, selectedBboxHandle, selectedCircleHandle, polylineVertices, circleCenter, circle3pPoints, undo, redo, canUndo, canRedo, diffMode, showClassSelector, manualMagnifierActive, magnifierForceOff, preferences.autoMagnifier, isDrawingTool]);
 
   // Phase 2.10.2: Z key release handler removed - now using toggle mode instead
   // (Toggle mode is more reliable in remote desktop environments)
@@ -4032,6 +4056,13 @@ export default function Canvas() {
             <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
           </svg>
           <span>You have exclusive editing access</span>
+        </div>
+      )}
+
+      {/* Image Path Display */}
+      {currentImage && (
+        <div className="absolute top-32 left-4 z-10 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg shadow text-xs font-mono">
+          {currentImage.id}
         </div>
       )}
 

@@ -122,6 +122,8 @@ class StorageClient:
 
             # Phase 3: Generate presigned URLs only for paginated images (slow)
             images = []
+            dataset_prefix = f"datasets/{dataset_id}/"
+
             for obj in paginated_objects:
                 key = obj['Key']
                 filename = key.split('/')[-1]
@@ -133,8 +135,11 @@ class StorageClient:
                     expiration=3600
                 )
 
-                # Extract image ID from filename (without extension)
-                image_id = filename.rsplit('.', 1)[0] if '.' in filename else filename
+                # Phase 11: Use relative path from dataset root (includes images/ prefix and full path)
+                # This matches the format stored in DB: "images/zipper/squeezed_teeth/001.png"
+                # key format: "datasets/{dataset_id}/images/zipper/squeezed_teeth/001.png"
+                # image_id format: "images/zipper/squeezed_teeth/001.png"
+                image_id = key[len(dataset_prefix):] if key.startswith(dataset_prefix) else filename
 
                 images.append({
                     'id': image_id,

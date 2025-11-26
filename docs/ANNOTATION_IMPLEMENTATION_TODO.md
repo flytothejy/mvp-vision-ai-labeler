@@ -2,7 +2,7 @@
 
 **Project**: Vision AI Labeler - Annotation Interface
 **Start Date**: 2025-11-14
-**Last Updated**: 2025-11-25 (Late Night)
+**Last Updated**: 2025-11-26 (Phase 11 Diff Mode)
 
 ---
 
@@ -20,7 +20,7 @@
 | **Phase 8: Collaboration Features** | **🔄 In Progress** | **70%** (8.5, 8.5.1, 8.5.2, 8.1, 8.2 complete) | **-** |
 | **Phase 9: Database Migration & Deployment** | **🔄 In Progress** | **74%** (9.1, 9.3, 9.4 complete) | **-** |
 | **Phase 10: Application Performance Optimization** | **✅ Complete** | **100%** | **2025-11-25** |
-| Phase 11: AI Integration | ⏸️ Pending | 0% | - |
+| **Phase 11: Version Diff & Comparison** | **🔄 In Progress** | **85%** | **-** |
 | Phase 12: Polish & Optimization | ⏸️ Pending | 0% | - |
 
 **Current Focus**:
@@ -36,7 +36,7 @@
 - **Phase 9.4: Demo Deployment ✅ Complete** (Cloudflare Tunnel + Railway Frontend)
 - **Phase 10: Application Performance Optimization ✅ Complete** (Quick Wins - 80% latency reduction)
 
-**Next Up**: Phase 11 (Version Diff & Comparison) or Phase 8.3 (Real-time Updates)
+**Current Focus**: Phase 11 (Version Diff & Comparison) - Overlay mode complete, side-by-side mode pending
 
 ---
 
@@ -1016,10 +1016,10 @@ async def get_current_user(...):
 
 ---
 
-## Phase 11: Version Diff & Comparison ⏸️ PENDING
+## Phase 11: Version Diff & Comparison 🔄 IN PROGRESS
 
 **Duration**: 2-3 days (18-22h)
-**Status**: Pending
+**Status**: 🔄 In Progress (85% - Overlay mode complete)
 **Goal**: Git-style diff visualization for annotation versions
 
 ### Overview
@@ -1099,7 +1099,7 @@ Leverage existing version management system to provide visual comparison between
 - [ ] Export diff report (CSV/JSON)
 
 **11.2.3 Canvas Diff Overlay** (4-6h)
-- [ ] **Overlay Mode** (default): Show both versions on same canvas
+- [x] **Overlay Mode** (default): Show both versions on same canvas
   - Version A (old): Semi-transparent red (#ff000050)
   - Version B (new): Semi-transparent green (#00ff0050)
   - Unchanged: Gray (#80808030)
@@ -1112,7 +1112,7 @@ Leverage existing version management system to provide visual comparison between
 - [ ] **Animation Mode**: Toggle between versions
   - Smooth transition (0.3s fade)
   - Keyboard shortcut: Space to toggle
-- [ ] Diff legend
+- [x] Diff legend
   - Color indicators for each change type
   - Counts per category
   - Toggle visibility per category
@@ -1120,10 +1120,10 @@ Leverage existing version management system to provide visual comparison between
 ### 11.3 Advanced Features (4-6h)
 
 **11.3.1 Image-by-Image Navigation** (2h)
-- [ ] Navigate images with changes only
+- [x] Navigate images with changes only
   - Skip unchanged images
   - Keyboard: N (next change), P (previous change)
-- [ ] Change summary per image
+- [x] Change summary per image
   - Show diff count badge on thumbnail
   - Red badge: has removals/modifications
   - Green badge: only additions
@@ -1149,11 +1149,11 @@ Leverage existing version management system to provide visual comparison between
 
 ### 11.4 Integration & Testing (2h)
 
-- [ ] Add "Compare Versions" button to version history panel
-- [ ] Keyboard shortcut: `Ctrl+D` to toggle diff mode
-- [ ] Toast notifications for diff calculations
-- [ ] Loading states for large diffs
-- [ ] Error handling: version not found, no annotations
+- [x] Add "Compare Versions" button to version history panel
+- [x] Keyboard shortcut: `Esc` to exit diff mode
+- [x] Toast notifications for diff calculations
+- [x] Loading states for large diffs
+- [x] Error handling: version not found, no annotations
 - [ ] E2E test: compare two versions, verify diff accuracy
 
 ### Technical Implementation Notes
@@ -1295,6 +1295,110 @@ annotations.forEach(ann => {
 ---
 
 ## Session Notes (Recent)
+
+### 2025-11-26: Phase 11 Version Diff & Comparison - Geometry Normalization & Canvas Rendering ✅
+
+**Task**: Working vs Published 버전 비교 시 geometry format 불일치 해결 및 diff 표시 버그 수정
+
+**Status**: ✅ Complete (~4 hours implementation time)
+
+**Context**: Phase 11 diff 기능 테스트 중 Working(DB) vs Published(R2) 버전 비교 시 모든 annotation이 diff로 표시되는 문제 발견
+
+**Problems Discovered**:
+1. **All Diffs in Working vs Published**: Working과 Published 버전 비교 시 모든 annotation이 modified로 표시
+2. **Geometry Format Mismatch**: DB format `{x, y, width, height}` vs R2 format `{bbox: [x, y, w, h]}`
+3. **Confidence Mismatch**: DB `confidence: 1.0` vs R2 `confidence: None` → false diff 발생
+4. **Diff Annotations at 0,0**: Canvas에서 diff annotation들이 실제 위치가 아닌 (0,0)에 표시
+
+**Root Causes Identified**:
+1. **Hybrid Data Sources**: Working(PostgreSQL) vs Published(R2 DICE) 서로 다른 geometry 포맷 사용
+2. **No Geometry Normalization**: `compare_annotations()`가 geometry 객체를 직접 비교하여 키 불일치 감지
+3. **Confidence Default Handling**: None과 1.0을 다른 값으로 간주
+4. **Canvas Format Detection**: `snapshotToAnnotation()`이 DB format만 처리, R2 bbox 배열 미지원
+
+**Implementation Summary**:
+
+1. **SQL Logging Reduction** (0.5h)
+   - `backend/app/core/database.py`: 모든 engine에서 `echo=False` 설정
+   - `image_lock` 관련 verbose SQL 로그 제거로 디버깅 개선
+   - Application DEBUG mode는 유지
+
+2. **Geometry Normalization** (1.5h)
+   - `backend/app/services/version_diff_service.py`: `normalize_geometry()` 함수 추가 (lines 218-260)
+   - DB format `{x, y, width, height}` → 정규화
+   - R2 format `{bbox: [x, y, w, h]}` → `{x, y, width, height}`로 변환
+   - Polygon/Circle geometry도 지원
+   - `find_best_match()`와 `compare_annotations()`에서 정규화된 geometry 사용
+
+3. **Confidence Normalization** (0.5h)
+   - `compare_annotations()`에서 None을 1.0(default)로 처리
+   - False diff 제거: DB의 1.0과 R2의 None을 동일하게 간주
+
+4. **Canvas Rendering Fix** (1.5h)
+   - `frontend/components/annotation/Canvas.tsx`: `snapshotToAnnotation()` 수정 (lines 656-677)
+   - R2 bbox array format 감지 및 처리
+   - DB format과 R2 format 모두 지원
+   ```typescript
+   if (snapshot.geometry.bbox && Array.isArray(snapshot.geometry.bbox)) {
+     // R2 format: already has bbox array
+     geometry = { type: 'bbox', bbox: snapshot.geometry.bbox };
+   } else {
+     // DB format: convert to bbox array
+     geometry = {
+       type: 'bbox',
+       bbox: [x || 0, y || 0, width || 0, height || 0]
+     };
+   }
+   ```
+
+5. **UX Improvement** (0.5h)
+   - `frontend/lib/hooks/useKeyboardShortcuts.ts`: Delete/Backspace 키 확인 다이얼로그
+   - Browser confirm → Global confirm dialog (일관된 UX)
+
+**Files Modified**:
+- `backend/app/core/database.py`: SQL echo logging disabled
+- `backend/app/services/version_diff_service.py`:
+  - `normalize_geometry()` 추가
+  - `compare_annotations()` confidence 처리
+  - `find_best_match()` geometry normalization
+- `frontend/components/annotation/Canvas.tsx`: `snapshotToAnnotation()` dual format 지원
+- `frontend/lib/hooks/useKeyboardShortcuts.ts`: Global confirm 적용
+
+**Debug Logging Added**:
+- Geometry keys 비교 로그
+- Confidence 값 비교 로그
+- Changes dict 상세 로그
+- 추후 제거 또는 조건부 활성화 필요
+
+**Key Technical Insights**:
+- **Geometry Normalization Pattern**: 서로 다른 데이터 소스(DB vs R2) 통합 시 정규화 계층 필수
+- **Default Value Handling**: null/None 값은 비즈니스 로직상 의미 있는 default로 변환
+- **Format Detection Logic**: Frontend에서 두 가지 포맷 모두 지원하여 hybrid 환경 대응
+- **IoU-based Matching**: Annotation ID가 없어도 geometry 유사도로 매칭 가능
+
+**Phase 11 Progress**:
+- Overlay Mode: ✅ Complete
+- Diff Calculation: ✅ Complete (geometry normalization)
+- Diff Navigation: ✅ Complete (badges, filtering)
+- Side-by-side Mode: ⏸️ Pending
+- Animation Mode: ⏸️ Pending
+- Overall: **85%** complete
+
+**Testing Results**:
+- ✅ Published vs Published: 정상 작동 (same format)
+- ✅ Working vs Published: 정상 작동 (geometry normalization)
+- ✅ Diff badges: Added/Removed/Modified 정확히 표시
+- ✅ Canvas rendering: 모든 diff annotation 올바른 위치에 표시
+- ✅ Version auto-sorting: 항상 older → newer 비교 방향
+
+**Next Steps**:
+- Debug logging 제거 또는 조건부 활성화
+- Side-by-side view mode 구현
+- Animation toggle mode 구현
+- E2E tests for diff accuracy
+
+**Git Commits**:
+- `bd78592`: fix: Normalize geometry formats for Working vs Published comparison
 
 ### 2025-11-25 (Late Night): Phase 9.4 Railway Deployment Troubleshooting & R2 CORS ✅
 
@@ -1911,3 +2015,103 @@ Invitation Workflow:
 ---
 
 **End of Document**
+
+---
+
+## ISSUES
+
+### Upload Progress & Completion Issue (2025-11-26)
+
+**Status**: Needs Investigation
+
+**Description**:
+업로드 프로그레스바가 97%까지 진행되고, 첫 번째 파일에서 스피너가 계속 돌면서 완료되지 않는 문제.
+
+**Observed Behavior**:
+1. 프로그레스바가 97%까지 주욱 진행
+2. 파일 리스트에서 첫 번째 파일만 스피너 표시 (uploading)
+3. 나머지 파일들은 대기 상태 (pending)
+4. 천천히 100%에 도달하지만 여전히 첫 번째 파일에서 멈춘 것처럼 보임
+5. 한참을 기다려도 완료되지 않음
+6. R2 Storage에는 모든 파일이 업로드된 것으로 보임 (완전히 확인은 안됨)
+
+**Attempted Fixes** (Commit: 958ffd7):
+1. Backend: 50개마다 DB commit 추가
+   - 문제: 500개 INSERT가 pending 상태로 쌓여서 마지막 commit이 오래 걸림
+   - 해결: `COMMIT_BATCH_SIZE = 50` 도입
+
+2. Frontend: 파일 상태 업데이트 로직 수정
+   - 문제: `findIndex()` 사용으로 첫 번째 파일만 업데이트
+   - 해결: 정확한 배치 인덱스 (start ~ end) 사용
+
+**Current Status**:
+- 수정은 완료했으나 실제로 문제가 해결되었는지 확인 필요
+- 면밀한 테스트와 분석 필요
+- 추가 디버깅 로그 추가 검토
+
+**Next Steps**:
+- [ ] 다양한 파일 개수로 업로드 테스트 (10개, 50개, 100개, 500개)
+- [ ] Backend 로그 확인 (commit 타이밍, 소요 시간)
+- [ ] Frontend 상태 업데이트 로직 검증
+- [ ] R2 업로드 vs DB commit 타이밍 분석
+- [ ] 네트워크 타임아웃 설정 확인
+
+**Related Files**:
+- `backend/app/services/dataset_upload_service.py`
+- `frontend/components/datasets/upload/Step4Upload.tsx`
+- `backend/app/api/v1/endpoints/datasets.py` (add_images_to_dataset)
+
+**Related Commits**:
+- 958ffd7: fix: Resolve upload hanging issue with batch commits and status tracking
+
+---
+
+---
+
+## ISSUES
+
+### Upload Progress & Completion Issue (2025-11-26)
+
+**Status**: Needs Investigation
+
+**Description**:
+업로드 프로그레스바가 97%까지 진행되고, 첫 번째 파일에서 스피너가 계속 돌면서 완료되지 않는 문제.
+
+**Observed Behavior**:
+1. 프로그레스바가 97%까지 주욱 진행
+2. 파일 리스트에서 첫 번째 파일만 스피너 표시 (uploading)
+3. 나머지 파일들은 대기 상태 (pending)
+4. 천천히 100%에 도달하지만 여전히 첫 번째 파일에서 멈춘 것처럼 보임
+5. 한참을 기다려도 완료되지 않음
+6. R2 Storage에는 모든 파일이 업로드된 것으로 보임 (완전히 확인은 안됨)
+
+**Attempted Fixes** (Commit: 958ffd7):
+1. Backend: 50개마다 DB commit 추가
+   - 문제: 500개 INSERT가 pending 상태로 쌓여서 마지막 commit이 오래 걸림
+   - 해결: COMMIT_BATCH_SIZE = 50 도입
+
+2. Frontend: 파일 상태 업데이트 로직 수정
+   - 문제: findIndex() 사용으로 첫 번째 파일만 업데이트
+   - 해결: 정확한 배치 인덱스 (start ~ end) 사용
+
+**Current Status**:
+- 수정은 완료했으나 실제로 문제가 해결되었는지 확인 필요
+- 면밀한 테스트와 분석 필요
+- 추가 디버깅 로그 추가 검토
+
+**Next Steps**:
+- [ ] 다양한 파일 개수로 업로드 테스트 (10개, 50개, 100개, 500개)
+- [ ] Backend 로그 확인 (commit 타이밍, 소요 시간)
+- [ ] Frontend 상태 업데이트 로직 검증
+- [ ] R2 업로드 vs DB commit 타이밍 분석
+- [ ] 네트워크 타임아웃 설정 확인
+
+**Related Files**:
+- backend/app/services/dataset_upload_service.py
+- frontend/components/datasets/upload/Step4Upload.tsx
+- backend/app/api/v1/endpoints/datasets.py (add_images_to_dataset)
+
+**Related Commits**:
+- 958ffd7: fix: Resolve upload hanging issue with batch commits and status tracking
+
+---

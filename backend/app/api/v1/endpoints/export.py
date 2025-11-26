@@ -36,6 +36,7 @@ async def export_annotations(
     export_request: ExportRequest,
     labeler_db: Session = Depends(get_labeler_db),
     platform_db: Session = Depends(get_platform_db),
+    user_db: Session = Depends(get_user_db),
     current_user: User = Depends(get_current_user),
     _permission = Depends(require_project_permission("admin")),
 ):
@@ -70,6 +71,7 @@ async def export_annotations(
             export_data, stats, filename = _export_dice(
                 labeler_db=labeler_db,
                 platform_db=platform_db,
+                user_db=user_db,
                 project_id=project_id,
                 include_draft=export_request.include_draft,
                 image_ids=export_request.image_ids,
@@ -126,6 +128,7 @@ async def export_annotations(
 def _export_dice(
     labeler_db: Session,
     platform_db: Session,
+    user_db: Session,
     project_id: str,
     include_draft: bool,
     image_ids: Optional[list[str]],
@@ -136,6 +139,7 @@ def _export_dice(
     dice_data = export_to_dice(
         db=labeler_db,
         platform_db=platform_db,
+        user_db=user_db,
         project_id=project_id,
         include_draft=include_draft,
         image_ids=image_ids,
@@ -235,6 +239,7 @@ async def publish_version(
     publish_request: VersionPublishRequest,
     labeler_db: Session = Depends(get_labeler_db),
     platform_db: Session = Depends(get_platform_db),
+    user_db: Session = Depends(get_user_db),
     current_user: User = Depends(get_current_user),
     _permission = Depends(require_project_permission("admin")),
 ):
@@ -339,6 +344,7 @@ async def publish_version(
         dice_data, dice_stats, dice_filename = _export_dice(
             labeler_db=labeler_db,
             platform_db=platform_db,
+            user_db=user_db,
             project_id=project_id,
             include_draft=publish_request.include_draft,
             image_ids=None,

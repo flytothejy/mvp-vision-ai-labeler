@@ -349,6 +349,7 @@ def delete_s3_data(
 def create_final_backup(
     labeler_db: Session,
     platform_db: Session,
+    user_db: Session,
     dataset_id: str
 ) -> Dict[str, str]:
     """
@@ -360,6 +361,7 @@ def create_final_backup(
     Args:
         labeler_db: Labeler database session
         platform_db: Platform database session
+        user_db: User database session
         dataset_id: Dataset ID to backup
 
     Returns:
@@ -380,6 +382,7 @@ def create_final_backup(
             dice_data = export_to_dice(
                 db=labeler_db,
                 platform_db=platform_db,
+                user_db=user_db,
                 project_id=project.id,
                 include_draft=True  # Include everything for backup
             )
@@ -405,6 +408,7 @@ def create_final_backup(
 def delete_dataset_complete(
     labeler_db: Session,
     platform_db: Session,
+    user_db: Session,
     dataset_id: str,
     create_backup: bool = False
 ) -> Dict[str, Any]:
@@ -421,6 +425,7 @@ def delete_dataset_complete(
     Args:
         labeler_db: Labeler database session
         platform_db: Platform database session
+        user_db: User database session
         dataset_id: Dataset ID to delete
         create_backup: Whether to create backup before deletion
 
@@ -433,7 +438,7 @@ def delete_dataset_complete(
     # Create backup if requested
     backup_files = {}
     if create_backup:
-        backup_files = create_final_backup(labeler_db, platform_db, dataset_id)
+        backup_files = create_final_backup(labeler_db, platform_db, user_db, dataset_id)
 
     # Get project IDs for S3 cleanup
     project_ids = [p["project_id"] for p in impact.projects]
@@ -444,11 +449,11 @@ def delete_dataset_complete(
     # Delete S3 data
     s3_counts = delete_s3_data(dataset_id, project_ids)
 
-    # Delete Platform dataset record
+    # Delete Labeler dataset record
     dataset = labeler_db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if dataset:
-        platform_db.delete(dataset)
-        platform_db.commit()
+        labeler_db.delete(dataset)
+        labeler_db.commit()
 
     return {
         "dataset_id": dataset_id,

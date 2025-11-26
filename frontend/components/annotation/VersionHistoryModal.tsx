@@ -65,13 +65,17 @@ export default function VersionHistoryModal({ isOpen, onClose, projectId }: Vers
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    // Backend stores in UTC without 'Z', so we need to add it for correct parsing
+    const utcDateString = dateString.endsWith('Z') ? dateString : dateString + 'Z';
+    const date = new Date(utcDateString);
+    return date.toLocaleString('ko-KR', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Seoul',
     });
   };
 

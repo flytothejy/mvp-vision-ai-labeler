@@ -256,6 +256,18 @@ async def create_dataset(
     )
     labeler_db.add(db_project)
 
+    # Create project owner permission (SAME TRANSACTION)
+    from app.db.models.labeler import ProjectPermission
+
+    db_project_permission = ProjectPermission(
+        project_id=project_id,
+        user_id=current_user.id,
+        role="owner",
+        granted_by=current_user.id,
+        granted_at=datetime.utcnow(),
+    )
+    labeler_db.add(db_project_permission)
+
     # Commit all changes in single transaction
     try:
         labeler_db.commit()
@@ -851,6 +863,7 @@ async def delete_dataset(
         result = delete_dataset_complete(
             labeler_db=labeler_db,
             platform_db=platform_db,
+            user_db=user_db,
             dataset_id=dataset_id,
             create_backup=request.create_backup
         )
@@ -1246,6 +1259,7 @@ async def upload_dataset(
     upload_result = await upload_files_to_s3(
         dataset_id=dataset_id,
         files=files,
+        labeler_db=labeler_db,
         preserve_structure=True
     )
 
@@ -1436,6 +1450,7 @@ async def add_images_to_dataset(
     upload_result = await upload_files_to_s3(
         dataset_id=dataset_id,
         files=files,
+        labeler_db=labeler_db,
         preserve_structure=True
     )
 
